@@ -2,13 +2,14 @@
 """PyInstaller 打包配置:生成单文件 ScreenShotTool.exe。
 
 打包命令:
-    pyinstaller build.spec
+    pyinstaller build.spec --noconfirm
 产物:
     dist/ScreenShotTool.exe
-"""
-from PyInstaller.utils.hooks import collect_data_files
 
-block_cipher = None
+注意: PyInstaller 6.x 自带 hook-PyQt5.py 会自动收集 Qt 插件、
+translations、bin 等数据文件,不需要手动 collect_data_files。
+手动追加 2 元组会破坏 6.x 要求的 3 元组 TOC 格式。
+"""
 
 a = Analysis(
     ['screenshot_tool/__main__.py'],
@@ -16,7 +17,7 @@ a = Analysis(
     binaries=[],
     datas=[],
     hiddenimports=[
-        # 确保子模块被收集
+        # 确保子模块被收集 (作为包内引用)
         'screenshot_tool',
         'screenshot_tool.main',
         'screenshot_tool.config',
@@ -24,7 +25,7 @@ a = Analysis(
         'screenshot_tool.capture',
         'screenshot_tool.toolbar',
         'screenshot_tool.annotations',
-        # PyQt5 插件
+        # PyQt5 sip 桥接
         'PyQt5.sip',
     ],
     hookspath=[],
@@ -36,16 +37,10 @@ a = Analysis(
         'test',
         'pydoc',
     ],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
     noarchive=False,
 )
 
-# 收集 PyQt5 数据文件 (插件、translations 等)
-a.datas += collect_data_files('PyQt5')
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure, a.zipped_data)
 
 exe = EXE(
     pyz,
