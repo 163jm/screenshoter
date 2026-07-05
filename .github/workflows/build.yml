@@ -1,0 +1,98 @@
+name: Build Windows EXE
+
+# 触发条件:
+#   1. 推送 tag 形如 v1.0.0 -> 打包并发布 Release
+#   2. 手动 workflow_dispatch
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release:
+        description: '是否发布为 GitHub Release'
+        required: false
+        default: 'false'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write   # 发布 Release 需要
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip list
+
+      - name: Build with PyInstaller
+        shell: pwsh
+        run: |
+          pyinstaller build.spec --noconfirm
+          Get-ChildItem dist -Recurse | Select-Object FullName,Length
+
+      - name: Smoke test (启动 3 秒后退出)
+        shell: pwsh
+        run: |
+          $proc = Start-Process -FilePath ".\dist\ScreenShotTool.exe" -PassThru
+          Start-Sleep -Seconds 3
+          if (-not $proc.HasExited) {
+            Write-Output "EXE started OK (pid=$($proc.Id))"
+            Stop-Process -Id $proc.Id -Force
+          } else {
+            Write-Output "EXE exited early with code $($proc.ExitCode)"
+            exit 1
+          }
+
+      - name: Rename with arch tag
+        shell: pwsh
+        run: |
+          Copy-Item ".\dist\ScreenShotTool.exe" ".\ScreenShotTool-x64.exe"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenShotTool-windows-x64
+          path: |
+            ScreenShotTool-x64.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ScreenShotTool-x64.exe
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          body: |
+            ## Windows 截屏工具
+
+            **使用方法**:
+            1. 下载 `ScreenShotTool-x64.exe`
+            2. 双击运行 (驻留托盘)
+            3. 按 `Alt+Shift+A` 截图 (可在托盘右键 -> 设置 中修改)
+            4. 拖拽选区 -> 工具栏标注 -> 完成(复制到剪贴板) / 保存
+
+            **快捷键**:
+            - 截图: Alt+Shift+A (默认,可改)
+            - 撤销: Ctrl+Z
+            - 保存: Ctrl+S
+            - 确认: Enter
+            - 取消: Esc / 鼠标右键
+
+            **工具**: 矩形 R / 椭圆 O / 箭头 A / 画笔 P / 马赛克 M / 文字 T
+          draft: false
+          prerelease: false
